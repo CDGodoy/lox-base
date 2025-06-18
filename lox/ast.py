@@ -2,6 +2,8 @@ from abc import ABC
 from dataclasses import dataclass
 from typing import Callable
 
+from .runtime import truthy
+
 from .ctx import Ctx
 
 # Declaramos nossa classe base num módulo separado para esconder um pouco de
@@ -110,49 +112,53 @@ class Literal(Expr):
 
 @dataclass
 class And(Expr):
-    """
-    Uma operação infixa com dois operandos.
+    left: Expr
+    right: Expr
 
-    Ex.: x and y
-    """
+    def eval(self, ctx: Ctx):
+        left_val = self.left.eval(ctx)
+        if not truthy(left_val):
+            return left_val
+        return self.right.eval(ctx)
 
 
 @dataclass
 class Or(Expr):
-    """
-    Uma operação infixa com dois operandos.
-    Ex.: x or y
-    """
+    left: Expr
+    right: Expr
+
+    def eval(self, ctx: Ctx):
+        left_val = self.left.eval(ctx)
+        if truthy(left_val):
+            return left_val
+        return self.right.eval(ctx)
 
 
 @dataclass
 class UnaryOp(Expr):
-    """
-    Uma operação prefixa com um operando.
+    """Uma operação prefixa."""
 
-    Ex.: -x, !x
-    """
+    op: Callable[[Value], Value]
+    value: Expr
+
+    def eval(self, ctx: Ctx):
+        v = self.value.eval(ctx)
+        return self.op(v)
 
 
 @dataclass
 class Call(Expr):
-    """
-    Uma chamada de função.
+    """Uma chamada de função."""
 
-    Ex.: fat(42)
-    """
-    name: str
+    func: Expr
     params: list[Expr]
-    
+
     def eval(self, ctx: Ctx):
-        func = ctx[self.name]
-        params = []
-        for param in self.params:
-            params.append(param.eval(ctx))
-        
-        if callable(func):
-            return func(*params)
-        raise TypeError(f"{self.name} não é uma função!")
+        callee = self.func.eval(ctx)
+        args = [p.eval(ctx) for p in self.params]
+        if callable(callee):
+            return callee(*args)
+        raise TypeError(f"{callee} não é uma função!")
 
 
 @dataclass
@@ -175,29 +181,42 @@ class Super(Expr):
 
 @dataclass
 class Assign(Expr):
-    """
-    Atribuição de variável.
+    """Atribuição de variável."""
 
-    Ex.: x = 42
-    """
+    name: str
+    value: Expr
+
+    def eval(self, ctx: Ctx):
+        val = self.value.eval(ctx)
+        ctx.assign(self.name, val)
+        return val
 
 
 @dataclass
 class Getattr(Expr):
-    """
-    Acesso a atributo de um objeto.
+    """Acesso a atributo de um objeto."""
 
-    Ex.: x.y
-    """
+    obj: Expr
+    name: str
+
+    def eval(self, ctx: Ctx):
+        value = self.obj.eval(ctx)
+        return getattr(value, self.name)
 
 
 @dataclass
 class Setattr(Expr):
-    """
-    Atribuição de atributo de um objeto.
+    """Atribuição de atributo de um objeto."""
 
-    Ex.: x.y = 42
-    """
+    obj: Expr
+    name: str
+    value: Expr
+
+    def eval(self, ctx: Ctx):
+        obj = self.obj.eval(ctx)
+        val = self.value.eval(ctx)
+        setattr(obj, self.name, val)
+        return val
 
 
 #
@@ -228,47 +247,48 @@ class Return(Stmt):
 
 @dataclass
 class VarDef(Stmt):
-    """
-    Representa uma declaração de variável.
+    name: str
+    value: Expr
 
-    Ex.: var x = 42;
-    """
+    def eval(self, ctx: Ctx):
+        val = self.value.eval(ctx)
+        ctx.var_def(self.name, val)
 
 
 @dataclass
 class If(Stmt):
-    """
-    Representa uma instrução condicional.
+    cond: Expr
+    then_branch: Stmt
+    else_branch: Stmt | None = None
 
-    Ex.: if (x > 0) { ... } else { ... }
-    """
-
-
-@dataclass
-class For(Stmt):
-    """
-    Representa um laço de repetição.
-
-    Ex.: for (var i = 0; i < 10; i++) { ... }
-    """
+    def eval(self, ctx: Ctx):
+        if truthy(self.cond.eval(ctx)):
+            self.then_branch.eval(ctx)
+        elif self.else_branch is not None:
+            self.else_branch.eval(ctx)
 
 
 @dataclass
 class While(Stmt):
-    """
-    Representa um laço de repetição.
+    cond: Expr
+    body: Stmt
 
-    Ex.: while (x > 0) { ... }
-    """
+    def eval(self, ctx: Ctx):
+        while truthy(self.cond.eval(ctx)):
+            self.body.eval(ctx)
 
 
 @dataclass
 class Block(Node):
-    """
-    Representa bloco de comandos.
+    decls: list[Stmt]
 
-    Ex.: { var x = 42; print x;  }
-    """
+    def eval(self, ctx: Ctx):
+        inner = ctx.push({})
+        try:
+            for d in self.decls:
+                d.eval(inner)
+        finally:
+            inner.pop()
 
 
 @dataclass

@@ -27,6 +27,13 @@ def op_handler(op: Callable):
     return method
 
 
+def unary_handler(func: Callable):
+    def method(self, value):
+        return UnaryOp(func, value)
+
+    return method
+
+
 @v_args(inline=True)
 class LoxTransformer(Transformer):
     # Programa
@@ -47,13 +54,70 @@ class LoxTransformer(Transformer):
     eq = op_handler(op.eq)
     ne = op_handler(op.ne)
 
+    # Operadores unários
+    neg = unary_handler(op.neg)
+    not_ = unary_handler(op.not_)
+
+    def and_(self, left, right):
+        return And(left, right)
+
+    def or_(self, left, right):
+        return Or(left, right)
+
     # Outras expressões
-    def call(self, name: Var, params: list):
-        return Call(name.name, params)
+    def call(self, base, *suffixes):
+        expr = base
+        for part in suffixes:
+            if isinstance(part, list):
+                expr = Call(expr, part)
+            elif isinstance(part, Var):
+                expr = Getattr(expr, part.name)
+            else:
+                expr = Getattr(expr, str(part))
+        return expr
         
     def params(self, *args):
         params = list(args)
         return params
+
+    def call_args(self, params: list):
+        return params
+
+    def getattr(self, name: Var):
+        return name
+
+    def var_decl(self, name: Var, value=None):
+        if value is None:
+            value = Literal(None)
+        return VarDef(name.name, value)
+
+    def block(self, *decls):
+        return Block(list(decls))
+
+    def if_cmd(self, cond, then_branch, else_branch=None):
+        return If(cond, then_branch, else_branch)
+
+    def while_cmd(self, cond, body):
+        return While(cond, body)
+
+    def for_init(self, *args):
+        return args[0] if args else None
+
+    def for_cond(self, expr=None):
+        return expr if expr is not None else Literal(True)
+
+    def for_incr(self, expr=None):
+        return expr
+
+    def for_cmd(self, init, cond, incr, body):
+        if incr is not None:
+            body = Block([body, incr])
+        loop = While(cond, body)
+        decls = []
+        if init is not None:
+            decls.append(init)
+        decls.append(loop)
+        return Block(decls)
 
     # Comandos
     def print_cmd(self, expr):
@@ -76,3 +140,11 @@ class LoxTransformer(Transformer):
 
     def BOOL(self, token):
         return Literal(token == "true")
+
+
+    def assign(self, target, value):
+        if isinstance(target, Var):
+            return Assign(target.name, value)
+        if isinstance(target, Getattr):
+            return Setattr(target.obj, target.name, value)
+        raise ValueError("Invalid assignment target")

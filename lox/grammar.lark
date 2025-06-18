@@ -1,20 +1,36 @@
 ?start     : program
 
-program    : stmt*
+program    : declaration*
+
+?declaration : var_decl
+             | stmt
+
+var_decl  : "var" VAR ("=" expr)? ";"
 
 ?stmt      : expr ";"
            | print_cmd
-           // | if_cmd
-           // | for_cmd
+           | block
+           | if_cmd
+           | while_cmd
+           | for_cmd
            // | ...
 
 print_cmd  : "print" expr ";"
 
 // EXPRESSÕES
-?expr      : test
+?expr      : assignment
 
-?test      : test "==" cmp  -> eq
-           | test "!=" cmp  -> ne
+?assignment: atom "=" assignment  -> assign
+           | or_expr
+
+?or_expr   : or_expr "or" and_expr   -> or_
+           | and_expr
+
+?and_expr  : and_expr "and" equality   -> and_
+           | equality
+
+?equality  : equality "==" cmp  -> eq
+           | equality "!=" cmp  -> ne
            | cmp
 
 ?cmp       : cmp ">" factor   -> gt
@@ -27,20 +43,39 @@ print_cmd  : "print" expr ";"
            | factor "-" term  -> sub
            | term
 
-?term      : term "*" atom   -> mul
-           | term "/" atom   -> div 
+?term      : term "*" unary   -> mul
+           | term "/" unary   -> div
+           | unary
+
+?unary     : "!" unary       -> not_
+           | "-" unary       -> neg
            | atom
 
-?atom      : NUMBER 
+?atom      : call
+
+?primary   : NUMBER
            | BOOL
            | VAR
            | STRING
            | NIL
            | "(" cmp ")"
-           | call
 
-call       : VAR "(" params ")"
+call       : primary suffix*
+?suffix    : call_args
+           | getattr
+call_args  : "(" params ")"
+getattr    : "." VAR
 params     : [ expr ("," expr )* ]
+
+block      : "{" declaration* "}"
+if_cmd     : "if" "(" expr ")" stmt ["else" stmt]
+while_cmd  : "while" "(" expr ")" stmt
+for_cmd    : "for" "(" for_init for_cond ";" for_incr ")" stmt
+for_init   : var_decl
+           | expr ";"
+           | ";"
+for_cond   : expr?
+for_incr   : expr?
 
 BOOL.2     : "true" | "false"
 VAR.1      : /[a-z_]\w*/
