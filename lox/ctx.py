@@ -1,6 +1,6 @@
 import math
 import time
-from dataclasses import field
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Iterator, Optional, TypeVar
 
 from lox.ast import dataclass
@@ -128,6 +128,14 @@ class Ctx:
         Empilha um novo escopo no contexto atual.
         """
         return Ctx(env, self)
+
+    def assign(self, name: str, value: "Value") -> None:
+        if name in self.scope:
+            self.scope[name] = value
+        elif self.parent is not None:
+            self.parent.assign(name, value)
+        else:
+            raise KeyError(name)
 
     def is_global(self) -> bool:
         """
